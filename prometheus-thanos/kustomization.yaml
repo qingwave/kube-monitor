@@ -1,0 +1,19 @@
+namespace: monitoring
+
+resources:
+- ../prometheus
+- thanos-store-service.yaml
+- thanos-store-statefulSet.yaml
+- thanos-querier-service.yaml
+- thanos-querier-deployment.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+secretGenerator:
+  - name: thanos-objectstorage
+    files:
+      - thanos-objectstorage.yaml
+
+patchesStrategicMerge:
+- prometheus-deployment-patch.yaml
+- prometheus-service-patch.yaml

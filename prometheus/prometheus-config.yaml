@@ -1,0 +1,230 @@
+global:
+  scrape_interval: 60s
+  scrape_timeout: 60s
+  evaluation_interval: 60s
+  external_labels:
+    region: cc
+    monitor: infrastructure
+    replica: A
+rule_files:
+
+scrape_configs:
+- job_name: kubernetes-pods
+  scheme: http
+  tls_config:
+    insecure_skip_verify: true
+  kubernetes_sd_configs:
+  - role: pod
+    namespaces:
+      names: []
+  relabel_configs:
+  - source_labels:
+    - __meta_kubernetes_pod_annotation_prometheus_io_scrape
+    regex: 'true'
+    replacement: "$1"
+    action: keep
+  - source_labels:
+    - __meta_kubernetes_pod_annotation_prometheus_io_path
+    regex: "(.+)"
+    target_label: __metrics_path__
+    replacement: "$1"
+    action: replace
+  - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scheme]
+    action: replace
+    target_label: __scheme__
+    regex: (https?)
+  - source_labels:
+    - __address__
+    - __meta_kubernetes_pod_annotation_prometheus_io_port
+    regex: "(.+):(?:\\d+);(\\d+)"
+    target_label: __address__
+    replacement: "${1}:${2}"
+    action: replace
+  - source_labels: []
+    regex: __meta_kubernetes_pod_label_(.+)
+    replacement: "$1"
+    action: labelmap
+  - source_labels:
+    - __meta_kubernetes_namespace
+    regex: "(.*)"
+    target_label: namespace
+    replacement: "$1"
+    action: replace
+  - source_labels:
+    - __meta_kubernetes_pod_name
+    regex: "(.*)"
+    target_label: pod
+    replacement: "$1"
+    action: replace
+  - source_labels:
+    - __meta_kubernetes_pod_node_name
+    regex: "(.*)"
+    target_label: node
+    replacement: "$1"
+    action: replace
+
+- 
+
+- job_name: kube-state-metrics
+  scheme: http
+  static_configs:
+  - targets:
+    - kube-state-metrics:8080
+
+- job_name: kubelet
+  scheme: http
+  tls_config:
+    insecure_skip_verify: true
+  kubernetes_sd_configs:
+  - role: node
+  relabel_configs:
+  - source_labels: [__address__]
+    action: replace
+    target_label: __address__
+    regex: (.+):(.+)
+    replacement: ${1}:10255
+  - source_labels:
+    - __meta_kubernetes_node_label_kubernetes_io_hostname
+    regex: "(.*)"
+    target_label: node
+    replacement: "$1"
+    action: replace
+  - source_labels: []
+    regex: __meta_kubernetes_node_label_(.+)
+    replacement: "$1"
+    action: labelmap
+
+- job_name: 'kubernetes-endpoints'
+  scheme: http
+  tls_config:
+    insecure_skip_verify: true
+  kubernetes_sd_configs:
+  - role: endpoints
+    namespaces:
+      names: []
+  relabel_configs:
+  - source_labels:
+    - __meta_kubernetes_service_annotation_prometheus_io_scrape
+    regex: 'true'
+    replacement: "$1"
+    action: keep
+  - action: labelmap
+    regex: __meta_kubernetes_service_label_(.+)
+  - source_labels: [__meta_kubernetes_namespace]
+    action: replace
+    target_label: kubernetes_namespace
+  - source_labels: [__meta_kubernetes_service_name]
+    action: replace
+    target_label: kubernetes_name
+
+- job_name: 'kubernetes-cadvisor'
+  scheme: http
+  tls_config:
+    insecure_skip_verify: true
+  kubernetes_sd_configs:
+  - role: node
+  metric_relabel_configs:
+  - source_labels:
+    - pod_name
+    regex: "(.*)"
+    target_label: pod
+    replacement: "$1"
+    action: replace
+  - source_labels:
+    - container_name
+    regex: "(.*)"
+    target_label: container
+    replacement: "$1"
+    action: replace
+  relabel_configs:
+  - source_labels: [__address__]
+    action: replace
+    target_label: __address__
+    regex: (.+):(.+)
+    replacement: ${1}:10255
+  - source_labels:
+    - pod_name
+    regex: "(.*)"
+    target_label: pod
+    replacement: "$1"
+    action: replace
+  - source_labels:
+    - __meta_kubernetes_node_label_kubernetes_io_hostname
+    regex: "(.*)"
+    target_label: node
+    replacement: "$1"
+    action: replace
+  - action: labelmap
+    regex: __meta_kubernetes_node_label_(.+)
+  - source_labels: [__meta_kubernetes_node_name]
+    regex: (.+)
+    target_label: __metrics_path__
+    replacement: /metrics/cadvisor
+
+- job_name: node-exporter
+  kubernetes_sd_configs:
+  - role: pod
+    namespaces:
+      names:
+      - kube-system
+  relabel_configs:
+  - source_labels:
+    - __meta_kubernetes_pod_label_app
+    action: keep
+    regex: node-exporter
+  - source_labels:
+    - __meta_kubernetes_namespace
+    regex: "(.*)"
+    target_label: namespace
+    replacement: "$1"
+    action: replace
+  - source_labels:
+    - __meta_kubernetes_pod_name
+    regex: "(.*)"
+    target_label: pod
+    replacement: "$1"
+    action: replace
+  - source_labels:
+    - __meta_kubernetes_pod_node_name
+    regex: "(.*)"
+    target_label: node
+    replacement: "$1"
+    action: replace
+
+# sd
+- job_name: 'kubernetes-apiservers'
+  kubernetes_sd_configs:
+  - role: endpoints
+  scheme: https
+  tls_config:
+    ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+  bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+  relabel_configs:
+  - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+    action: keep
+    regex: default;kubernetes;https
+
+# static
+- job_name: kube-apiserver
+  scheme: http
+  static_configs:
+  - targets:
+    - master01:8081
+
+- job_name: etcd
+  scheme: http
+  static_configs:
+  - targets:
+    - master01:2379
+
+- job_name: kube-scheduler
+  scheme: http
+  static_configs:
+  - targets:
+    - master01:10251
+
+- job_name: kube-controller-manager
+  scheme: http
+  static_configs:
+  - targets:
+    - master01:10252

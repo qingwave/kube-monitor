@@ -1,0 +1,14 @@
+namespace: monitoring
+
+resources:
+- prometheus-clusterrolebinding.yaml
+- prometheus-deployment.yaml
+- prometheus-service.yaml
+- prometheus-serviceaccount.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: prometheus-config
+    files:
+      - prometheus-config.yaml
