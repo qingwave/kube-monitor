@@ -1,0 +1,9 @@
+namespace: monitoring
+
+resources:
+- ../prometheus
+- prometheus-leader-role.yaml
+- prometheus-leader-rolebinding.yaml
+
+patchesStrategicMerge:
+- prometheus-deployment-patch.yaml

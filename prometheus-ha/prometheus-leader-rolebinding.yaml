@@ -1,11 +1,11 @@
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
-  name: prometheus
+  name: prometheus-leader-election
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: prometheus
+  kind: Role
+  name: prometheus-leader-election
 subjects:
 - kind: ServiceAccount
   name: prometheus

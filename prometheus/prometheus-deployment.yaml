@@ -61,7 +61,6 @@ spec:
         configMap:
           name: prometheus-config
       - name: data
-        hostPath:
-          path: /home/data/thanos
+        emptyDir: {}
       dnsPolicy: ClusterFirst
       restartPolicy: Always

@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: prometheus
+        image: cr.d.xiaomi.net/containercloud/prometheus:v2.15.1-alpine
+        env:
+        - name: PROMARGS
+          value: "--config.file=/etc/prometheus/prometheus-config.yaml --web.console.libraries=/etc/prometheus/console_libraries --web.console.templates=/etc/prometheus/consoles --storage.tsdb.path=/prometheus/data --storage.tsdb.retention=7d --web.enable-lifecycle"
+        command:
+        - sh
+        - -c
+        args:
+        - while true; do leader=$(curl --silent http://localhost:4040/ 2>&1); echo $leader | grep $HOSTNAME && echo "come new leader $leader" && /bin/prometheus $PROMARGS && exit 1; echo "now leader $leader"; sleep 10; done
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: 9090
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      - name: leader-election
+        image: cr.d.xiaomi.net/containercloud/leader-elector:0.5 #k8s.gcr.io/leader-elector:0.5
+        args:
+        - --election=prometheus-leader-election
+        - --election-namespace=$(NAMESPACE)
+        - --use-cluster-credentials
+        - --ttl=10s
+        - --http=0.0.0.0:4040
+        env:
+        - name: PROMARGS
+          value: "--config.file=/etc/prometheus/prometheus-config.yaml --web.console.libraries=/etc/prometheus/console_libraries --web.console.templates=/etc/prometheus/consoles --storage.tsdb.path=/prometheus/data --storage.tsdb.retention=7d --web.enable-lifecycle"
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace  
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 4040

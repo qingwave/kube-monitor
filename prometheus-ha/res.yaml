@@ -5,13 +5,40 @@ metadata:
   namespace: monitoring
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: prometheus-leader-election
+  namespace: monitoring
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - endpoints
+  verbs:
+  - '*'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prometheus-leader-election
+  namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: prometheus-leader-election
+subjects:
+- kind: ServiceAccount
+  name: prometheus
+  namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: prometheus
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: view
+  name: prometheus
 subjects:
 - kind: ServiceAccount
   name: prometheus
@@ -90,30 +117,14 @@ metadata:
   namespace: monitoring
 ---
 apiVersion: v1
-data:
-  thanos-objectstorage.yaml: dHlwZTogRklMRVNZU1RFTQpjb25maWc6CiAgZGlyZWN0b3J5OiAiL2hvbWUvZGF0YSIK
-kind: Secret
-metadata:
-  name: thanos-objectstorage
-  namespace: monitoring
-type: Opaque
----
-apiVersion: v1
 kind: Service
 metadata:
   name: prometheus
   namespace: monitoring
 spec:
   ports:
-  - name: prom
-    port: 9090
+  - port: 9090
     targetPort: 9090
-  - name: grpc
-    port: 10901
-    targetPort: grpc
-  - name: http
-    port: 10902
-    targetPort: http
   selector:
     app: prometheus
 ---
@@ -149,15 +160,18 @@ spec:
         - mountPath: /etc/prometheus
           name: config
       - args:
-        - --config.file=/etc/prometheus/prometheus-config.yaml
-        - --web.console.libraries=/etc/prometheus/console_libraries
-        - --web.console.templates=/etc/prometheus/consoles
-        - --storage.tsdb.path=/prometheus/data
-        - --storage.tsdb.min-block-duration=2h
-        - --storage.tsdb.max-block-duration=2h
-        - --storage.tsdb.retention=7d
-        - --web.enable-lifecycle
-        image: cr.d.xiaomi.net/containercloud/prometheus:v2.15.1
+        - while true; do leader=$(curl --silent http://localhost:4040/ 2>&1); echo
+          $leader | grep $HOSTNAME && echo "come new leader $leader" && /bin/prometheus
+          $PROMARGS; echo "now leader $leader"; sleep 10; done
+        command:
+        - sh
+        - -c
+        env:
+        - name: PROMARGS
+          value: --config.file=/etc/prometheus/prometheus-config.yaml --web.console.libraries=/etc/prometheus/console_libraries
+            --web.console.templates=/etc/prometheus/consoles --storage.tsdb.path=/prometheus/data
+            --storage.tsdb.retention=7d --web.enable-lifecycle
+        image: cr.d.xiaomi.net/containercloud/prometheus:v2.15.1-alpine
         imagePullPolicy: Always
         name: prometheus
         ports:
@@ -168,27 +182,26 @@ spec:
         - mountPath: /prometheus/data
           name: data
       - args:
-        - sidecar
-        - --tsdb.path=/prometheus/data
-        - --prometheus.url=http://localhost:9090
-        - --objstore.config=$(OBJSTORE_CONFIG)
+        - --election=prometheus-leader-election
+        - --election-namespace=$(NAMESPACE)
+        - --use-cluster-credentials
+        - --ttl=10s
+        - --http=0.0.0.0:4040
         env:
-        - name: OBJSTORE_CONFIG
+        - name: PROMARGS
+          value: --config.file=/etc/prometheus/prometheus-config.yaml --web.console.libraries=/etc/prometheus/console_libraries
+            --web.console.templates=/etc/prometheus/consoles --storage.tsdb.path=/prometheus/data
+            --storage.tsdb.retention=7d --web.enable-lifecycle
+        - name: NAMESPACE
           valueFrom:
-            secretKeyRef:
-              key: thanos.yaml
-              name: thanos-objectstorage
-        image: quay.io/thanos/thanos:v0.9.0
-        imagePullPolicy: Always
-        name: thanos
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: cr.d.xiaomi.net/containercloud/leader-elector:0.5
+        imagePullPolicy: IfNotPresent
+        name: leader-election
         ports:
-        - containerPort: 10901
-          name: grpc
-        - containerPort: 10902
-          name: http
-        volumeMounts:
-        - mountPath: /prometheus/data
-          name: data
+        - containerPort: 4040
       dnsPolicy: ClusterFirst
       initContainers:
       - command:
